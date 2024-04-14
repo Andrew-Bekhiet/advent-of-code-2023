@@ -29,23 +29,21 @@ defmodule Day13 do
     |> Enum.sum()
   end
 
-  def find_horizontal_reflection_line(note) do
-    note_length = length(note.data)
+  def find_horizontal_reflection_line(_ = %Note{data: data}) do
+    note_length = length(data)
 
     line_index =
       1..(note_length - 1)
       |> Enum.filter(fn y ->
-        {part1, part2} = Enum.split(note.data, y)
+        {part1, part2} = Enum.split(data, y)
 
         min_length = min(length(part1), length(part2))
 
         part1 =
           part1
-          |> Enum.reverse()
-          |> Enum.take(min_length)
-          |> Enum.reverse()
+          |> Enum.slice(length(part1) - min_length, length(part1))
 
-        part2 = Enum.take(part2, min_length) |> Enum.reverse()
+        part2 = part2 |> Enum.take(min_length) |> Enum.reverse()
 
         part1 == part2
       end)
@@ -54,14 +52,13 @@ defmodule Day13 do
     line_index
   end
 
-  def find_vertical_reflection_line(note) do
-    note_length = length(note.data)
+  def find_vertical_reflection_line(_ = %Note{data: data}) do
+    note_length = length(data)
 
     line_index =
-      note.data
+      data
       |> Enum.with_index()
-      |> Enum.map(fn {line, y} ->
-        line_graphemes = String.graphemes(line)
+      |> Enum.map(fn {line, _} ->
         line_length = String.length(line)
 
         1..(line_length - 1)
@@ -99,9 +96,8 @@ defmodule Day13 do
   def parse_input(use_example) do
     filename = if use_example, do: "example-input.txt", else: "input.txt"
 
-    data =
-      File.read!(filename)
-      |> String.split("\n\n", trim: true)
-      |> Enum.map(&%Note{data: String.split(&1, "\n", trim: true)})
+    File.read!(filename)
+    |> String.split("\n\n", trim: true)
+    |> Enum.map(&%Note{data: String.split(&1, "\n", trim: true)})
   end
 end
