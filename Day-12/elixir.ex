@@ -1,288 +1,226 @@
 defmodule Day12 do
-  @spec compute_possibilities(String.t()) :: list(String.t())
-  def compute_possibilities(seq) when is_binary(seq) do
-    cond do
-      not (seq |> String.contains?("?")) ->
-        [seq]
+  # {can_merge, patterns}
+  @base_case_memo %{
+    "." => [
+      {false, [], false}
+    ],
+    "#" => [
+      {true, [1], true}
+    ],
+    "?" => [
+      {false, [], false},
+      {true, [1], true}
+    ]
+  }
 
-      true ->
-        [a, b] = String.split(seq, "?", parts: 2)
-
-        compute_possibilities(a <> "." <> b) ++ compute_possibilities(a <> "#" <> b)
-    end
+  def merge_patterns(left, right, _is_continuous = false) when is_list(left) and is_list(right) do
+    left ++ right
   end
 
-  # @spec compute_valid_possibilities(String.t(), list(pos_integer())) :: list(String.t())
-  # def compute_valid_possibilities(seq, patterns) when is_binary(seq) and is_list(patterns) do
-  #   damaged_count = patterns |> Enum.sum()
+  def merge_patterns([], [], _), do: []
 
-  #   cond do
-  #     not (seq |> String.contains?("?")) ->
-  #       if is_seq_valid(seq, damaged_count, patterns) do
-  #         [seq]
-  #       else
-  #         []
-  #       end
+  def merge_patterns(left, [], _), do: left
 
-  #     true ->
-  #       [a, b] = String.split(seq, "?", parts: 2)
+  def merge_patterns([], right, _), do: right
 
-  #       [a <> "." <> b, a <> "#" <> b]
-  #       |> Enum.map(fn seq -> seq |> compute_valid_possibilities(patterns) end)
-  #       |> List.flatten()
-  #   end
-  # end
-
-  @spec compute_valid_possibilities(String.t(), list(pos_integer()), map()) ::
-          {map(), list(String.t())}
-  def compute_valid_possibilities(seq, damaged_counts, memo)
-      when is_binary(seq) and is_list(damaged_counts) and is_map(memo) do
-    actual_damaged_count = damaged_counts |> Enum.sum()
-
-    # 3 -> 3
-    seq_damaged_count = seq |> String.graphemes() |> Enum.count(&(&1 == "#"))
-
-    # 3 -> 2
-    seq_unknowns_count = seq |> String.graphemes() |> Enum.count(&(&1 == "?"))
-
-    {final_memo, result} =
-      compute_valid_possibilities(
-        seq,
-        actual_damaged_count,
-        seq_damaged_count,
-        seq_unknowns_count,
-        damaged_counts,
-        memo
-      )
-
-    # IO.puts(inspect(final_memo, pretty: true))
-    IO.puts(length(result))
-
-    {final_memo, result}
+  def merge_patterns([left], [right], _is_continuous = true) do
+    [left + right]
   end
 
-  @spec compute_valid_possibilities(
-          String.t(),
-          pos_integer(),
-          pos_integer(),
-          pos_integer(),
-          list(pos_integer()),
-          map()
-        ) :: {map(), list(String.t())}
-  def compute_valid_possibilities(
-        seq,
-        actual_damaged_count,
-        seq_damaged_count,
-        seq_unknowns_count,
-        damaged_counts,
-        memo
+  def merge_patterns(left, right, _is_continuous = true) when is_list(left) and is_list(right) do
+    left_length = length(left)
+    right_length = length(right)
+
+    {left_rest, [left_last]} =
+      left
+      |> Enum.split(left_length - 1)
+
+    {[right_hd], right_rest} =
+      right
+      |> Enum.split(1)
+
+    left_rest ++ [left_last + right_hd | right_rest]
+  end
+
+  @spec merge_patterns(
+          binary(),
+          list({boolean(), list(pos_integer())}),
+          list({boolean(), list(pos_integer())})
+        ) :: list({boolean(), list(pos_integer())})
+  def merge_patterns(
+        left_first_char = <<_char>>,
+        right_last_char = <<_char2>>,
+        left_patterns,
+        right_patterns
       )
-      # actual_damaged_count = damaged_counts |> Enum.sum()
-      when is_binary(seq) and is_integer(actual_damaged_count) and is_integer(seq_damaged_count) and
-             is_integer(seq_damaged_count) and is_list(damaged_counts) and is_map(memo) do
-    # Damaged count with unknown position
-    unknown_damaged_count = actual_damaged_count - seq_damaged_count
-    # Operational count with unknown position
-    unknown_operational_count = seq_unknowns_count - unknown_damaged_count
+      when is_list(left_patterns) and is_list(right_patterns) do
+    left_patterns
+    |> Enum.map(fn {left_can_merge_from_left, left, left_can_merge} ->
+      right_patterns
+      |> Enum.map(fn {right_can_merge, right, right_can_merge_from_right} ->
+        {
+          left_first_char == "#" or (left_first_char == "?" and left_can_merge_from_left),
+          merge_patterns(left, right, left_can_merge and right_can_merge),
+          right_last_char == "#" or (right_last_char == "?" and right_can_merge_from_right)
+        }
+      end)
+    end)
+    |> List.flatten()
+  end
 
-    memo_key = {
-      seq,
-      # actual_damaged_count,
-      # seq_damaged_count,
-      # seq_unknowns_count
-      # damaged_counts,
-      unknown_operational_count,
-      unknown_damaged_count
-    }
+  def pad_left(list, required_length) do
+    list_length = length(list)
 
-    computation_result =
-      memo
-      |> Map.get_lazy(memo_key, fn ->
-        {inner_memo, result} =
-          case {unknown_operational_count > 0, unknown_damaged_count > 0} do
-            {true, true} ->
-              [a, b] = String.split(seq, "?", parts: 2)
+    padding_length = required_length - list_length
 
-              {operational_memo, operational_result} =
-                compute_valid_possibilities(
-                  a <> "." <> b,
-                  actual_damaged_count,
-                  seq_damaged_count,
-                  seq_unknowns_count - 1,
-                  damaged_counts,
-                  memo
-                )
+    (1..padding_length |> Enum.map(fn _ -> 0 end)) ++ list
+  end
 
-              merged_memo =
-                Map.merge(memo, operational_memo, fn key, val1, val2 ->
-                  MapSet.new(val1 ++ val2) |> MapSet.to_list()
-                end)
+  def solve_for(sequence, memo \\ @base_case_memo) do
+    # IO.puts(sequence)
 
-              {damaged_memo, damaged_result} =
-                compute_valid_possibilities(
-                  a <> "#" <> b,
-                  actual_damaged_count,
-                  seq_damaged_count + 1,
-                  seq_unknowns_count - 1,
-                  damaged_counts,
-                  merged_memo
-                )
+    sequence_length = String.length(sequence)
 
-              merged_memo =
-                Map.merge(merged_memo, damaged_memo, fn key, val1, val2 ->
-                  MapSet.new(val1 ++ val2) |> MapSet.to_list()
-                end)
+    case sequence do
+      <<_>> ->
+        {memo, memo |> Map.get(sequence)}
 
-              {
-                merged_memo,
-                operational_result ++ damaged_result
-              }
+      <<char>> <> rest ->
+        # IO.puts("\nchar: #{<<char>>},\trest: #{rest}")
 
-            {false, true} ->
-              [a, b] = String.split(seq, "?", parts: 2)
+        left_patterns = memo |> Map.get_lazy(<<char>>, fn -> solve_for(<<char>>, memo) end)
 
-              compute_valid_possibilities(
-                a <> "#" <> b,
-                actual_damaged_count,
-                seq_damaged_count + 1,
-                seq_unknowns_count - 1,
-                damaged_counts,
-                memo
-              )
+        {new_memo, right_patterns} =
+          if memo |> Map.has_key?(rest) do
+            # IO.puts("got result for #{sequence} from memo")
 
-            {true, false} ->
-              [a, b] = String.split(seq, "?", parts: 2)
-
-              compute_valid_possibilities(
-                a <> "." <> b,
-                actual_damaged_count,
-                seq_damaged_count,
-                seq_unknowns_count - 1,
-                damaged_counts,
-                memo
-              )
-
-            _ ->
-              if is_seq_valid(seq, actual_damaged_count, damaged_counts) do
-                {memo, [seq]}
-              else
-                {memo, []}
-              end
+            {memo, memo |> Map.get(rest)}
+          else
+            solve_for(rest, memo)
           end
 
-        new_memo =
-          inner_memo
-          |> Map.put(memo_key, result)
+        # IO.puts("solved for #{sequence}")
 
-        {new_memo, result}
-      end)
+        # IO.puts(
+        #  "result_can_merge: #{result_can_merge},\t\tmerging: #{inspect(left_patterns, pretty: true)}\t\tand #{inspect(right_patterns, pretty: true)}"
+        # )
 
-    if is_tuple(computation_result) do
-      computation_result
-    else
-      IO.puts("result from memo")
-      {memo, computation_result}
-    end
-  end
+        result =
+          merge_patterns(
+            <<char>>,
+            rest |> String.slice(-1, 1),
+            left_patterns,
+            right_patterns
+          )
 
-  # def compute_valid_possibilities(seq, max_damaged_count, max_operational_count)
-  #     when is_binary(seq) and is_integer(max_damaged_count) and is_integer(max_operational_count) do
-  #   cond do
-  #     not (seq |> String.contains?("?")) ->
-  #       if is_seq_valid(seq, damaged_count, patterns) do
-  #         [seq]
-  #       else
-  #         []
-  #       end
+        # IO.puts("result: #{inspect(result, pretty: true)}")
 
-  #     true ->
-  #       [a, b] = String.split(seq, "?", parts: 2)
-
-  #       [a <> "." <> b, a <> "#" <> b]
-
-  #       compute_valid_possibilities(a <> "." <> b, max_damaged_count, max_operational_count - 1) <>
-  #         compute_valid_possibilities(a <> "#" <> b, max_damaged_count - 1, max_operational_count)
-  #   end
-  # end
-
-  @spec find_valid_sequences(list(String.t()), list(pos_integer())) :: list(String.t())
-  def find_valid_sequences(sequences, patterns) when is_list(sequences) and is_list(patterns) do
-    damaged_count = patterns |> Enum.sum()
-
-    sequences
-    |> Enum.filter(fn seq ->
-      is_seq_valid(seq, damaged_count, patterns)
-    end)
-  end
-
-  def is_seq_valid(seq, damaged_count, patterns) do
-    seq
-    |> String.graphemes()
-    |> Enum.count(&(&1 == "#")) == damaged_count and
-      seq
-      |> count_first_contiguous() == patterns
-  end
-
-  def count_first_contiguous(seq, char \\ "#") when is_binary(seq) and is_binary(char) do
-    {count, next_index} =
-      seq
-      |> String.graphemes()
-      |> Enum.reduce({0, 0, char}, fn
-        ^char, {count, index, ^char} ->
-          {count + 1, index + 1, char}
-
-        _, {count, index, _} when count == 0 ->
-          {count, index + 1, char}
-
-        current_char, {count, index, char} ->
-          {count, index, "  "}
-      end)
-      |> Tuple.delete_at(2)
-
-    {_, rest} = seq |> String.split_at(next_index)
-
-    if rest |> String.contains?(char) do
-      [count | count_first_contiguous(rest, char)]
-    else
-      [count]
+        {new_memo |> Map.put(rest, result), result}
     end
   end
 
   def part1(use_example) do
     input = parse_input(use_example)
 
-    {memo, sum} =
-      input
-      |> Enum.reduce({%{}, 0}, fn {seq, counts}, {memo, acc} ->
-        {new_memo, list} = seq |> compute_valid_possibilities(counts, memo)
+    input
+    |> Enum.map(fn {sequence, pattern} ->
+      {_, p} = solve_for(sequence)
 
-        {
-          new_memo,
-          acc + length(list)
-        }
-      end)
+      count =
+        p
+        |> Enum.filter(fn {_, p, _} -> p == pattern end)
+        |> Enum.count()
 
-    sum
+      IO.puts("Count for #{sequence}: #{count}")
+
+      count
+    end)
+    |> Enum.sum()
   end
 
   def part2(use_example) do
     input = parse_input(use_example)
 
-    {memo, sum} =
-      input
-      |> Enum.reduce({%{}, 0}, fn {seq, counts}, {memo, acc} ->
-        new_seq = seq <> "?" <> seq <> "?" <> seq <> "?" <> seq <> "?" <> seq
-        new_counts = counts ++ counts ++ counts ++ counts ++ counts
+    input
+    |> Enum.reduce({@base_case_memo, 0}, fn {sequence, pattern}, {memo, sum} ->
+      unfolded_pattern = pattern ++ pattern ++ pattern ++ pattern ++ pattern
 
-        {new_memo, list} = seq |> compute_valid_possibilities(new_counts, memo)
+      left_first_char = sequence |> String.slice(0, 1)
+      right_last_char = sequence |> String.slice(-1, 1)
 
-        {
-          new_memo,
-          acc + length(list)
-        }
-      end)
+      {_, patterns_} = solve_for(sequence <> "?")
+      {_, patterns} = solve_for(sequence)
 
-    sum
+      patterns =
+        patterns
+        |> Enum.filter(fn {_, p, _} -> p == pattern end)
+
+      patterns_ =
+        patterns_
+        |> Enum.filter(fn {_, p, _} ->
+          if p == pattern do
+            true
+          else
+            p_length = length(p)
+            pattern_length = length(pattern)
+
+            p_length == pattern_length or
+              p_length - 1 == pattern_length
+          end
+        end)
+
+      # |> Enum.map(fn {_, p, _} -> {false, p} end)
+
+      IO.puts("patterns_ #{inspect(patterns_, pretty: true)}")
+      IO.puts("Solving for #{sequence}?#{sequence}")
+
+      patterns_of_2 =
+        merge_patterns(
+          left_first_char,
+          "?",
+          patterns_,
+          patterns_
+        )
+
+      patterns_of_4 =
+        merge_patterns(
+          left_first_char,
+          "?",
+          patterns_of_2,
+          patterns_of_2
+        )
+
+      patterns_of_5 =
+        merge_patterns(
+          left_first_char,
+          right_last_char,
+          patterns_of_4,
+          patterns
+        )
+
+      # IO.puts("patterns#{inspect(patterns, pretty: true)}")
+      # IO.puts("patterns_with_seperator#{inspect(patterns_with_seperator, pretty: true)}")
+      # IO.puts("patterns_of_2#{inspect(patterns_of_2, pretty: true)}")
+
+      # IO.puts("Solving for 5*#{sequence_with_seperator}")
+
+      # patterns_of_5 =
+      #   merge_patterns(
+      #     left_first_char,
+      #     patterns,
+      #     merge_patterns(left_first_char, patterns_of_2, patterns_of_2)
+      #   )
+
+      count =
+        patterns_of_5
+        |> Enum.filter(fn {_, p, _} -> p == unfolded_pattern end)
+        |> Enum.count()
+
+      IO.puts(count)
+
+      {memo, sum + count}
+    end)
+    |> elem(1)
   end
 
   @spec parse_input(boolean) :: list({String.t(), list(pos_integer())})
