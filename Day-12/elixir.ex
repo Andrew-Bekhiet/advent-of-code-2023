@@ -33,10 +33,10 @@ defmodule Day12 do
   #   end
   # end
 
-  @spec compute_valid_possibilities(String.t(), list(pos_integer())) ::
-          list(String.t())
-  def compute_valid_possibilities(seq, damaged_counts)
-      when is_binary(seq) and is_list(damaged_counts) do
+  @spec compute_valid_possibilities(String.t(), list(pos_integer()), map()) ::
+          {map(), list(String.t())}
+  def compute_valid_possibilities(seq, damaged_counts, memo)
+      when is_binary(seq) and is_list(damaged_counts) and is_map(memo) do
     actual_damaged_count = damaged_counts |> Enum.sum()
 
     # 3 -> 3
@@ -45,13 +45,20 @@ defmodule Day12 do
     # 3 -> 2
     seq_unknowns_count = seq |> String.graphemes() |> Enum.count(&(&1 == "?"))
 
-    compute_valid_possibilities(
-      seq,
-      actual_damaged_count,
-      seq_damaged_count,
-      seq_unknowns_count,
-      damaged_counts
-    )
+    {final_memo, result} =
+      compute_valid_possibilities(
+        seq,
+        actual_damaged_count,
+        seq_damaged_count,
+        seq_unknowns_count,
+        damaged_counts,
+        memo
+      )
+
+    # IO.puts(inspect(final_memo, pretty: true))
+    IO.puts(length(result))
+
+    {final_memo, result}
   end
 
   @spec compute_valid_possibilities(
@@ -59,72 +66,123 @@ defmodule Day12 do
           pos_integer(),
           pos_integer(),
           pos_integer(),
-          list(pos_integer())
-        ) :: list(String.t())
+          list(pos_integer()),
+          map()
+        ) :: {map(), list(String.t())}
   def compute_valid_possibilities(
         seq,
         actual_damaged_count,
         seq_damaged_count,
         seq_unknowns_count,
-        damaged_counts
+        damaged_counts,
+        memo
       )
       # actual_damaged_count = damaged_counts |> Enum.sum()
       when is_binary(seq) and is_integer(actual_damaged_count) and is_integer(seq_damaged_count) and
-             is_integer(seq_damaged_count) and is_list(damaged_counts) do
+             is_integer(seq_damaged_count) and is_list(damaged_counts) and is_map(memo) do
     # Damaged count with unknown position
     unknown_damaged_count = actual_damaged_count - seq_damaged_count
     # Operational count with unknown position
     unknown_operational_count = seq_unknowns_count - unknown_damaged_count
 
-    rslt =
-      case {unknown_operational_count > 0, unknown_damaged_count > 0} do
-        {true, true} ->
-          [a, b] = String.split(seq, "?", parts: 2)
+    memo_key = {
+      seq,
+      # actual_damaged_count,
+      # seq_damaged_count,
+      # seq_unknowns_count
+      # damaged_counts,
+      unknown_operational_count,
+      unknown_damaged_count
+    }
 
-          compute_valid_possibilities(
-            a <> "." <> b,
-            actual_damaged_count,
-            seq_damaged_count,
-            seq_unknowns_count - 1,
-            damaged_counts
-          ) ++
-            compute_valid_possibilities(
-              a <> "#" <> b,
-              actual_damaged_count,
-              seq_damaged_count + 1,
-              seq_unknowns_count - 1,
-              damaged_counts
-            )
+    computation_result =
+      memo
+      |> Map.get_lazy(memo_key, fn ->
+        {inner_memo, result} =
+          case {unknown_operational_count > 0, unknown_damaged_count > 0} do
+            {true, true} ->
+              [a, b] = String.split(seq, "?", parts: 2)
 
-        {false, true} ->
-          [a, b] = String.split(seq, "?", parts: 2)
+              {operational_memo, operational_result} =
+                compute_valid_possibilities(
+                  a <> "." <> b,
+                  actual_damaged_count,
+                  seq_damaged_count,
+                  seq_unknowns_count - 1,
+                  damaged_counts,
+                  memo
+                )
 
-          compute_valid_possibilities(
-            a <> "#" <> b,
-            actual_damaged_count,
-            seq_damaged_count + 1,
-            seq_unknowns_count - 1,
-            damaged_counts
-          )
+              merged_memo =
+                Map.merge(memo, operational_memo, fn key, val1, val2 ->
+                  MapSet.new(val1 ++ val2) |> MapSet.to_list()
+                end)
 
-        {true, false} ->
-          [a, b] = String.split(seq, "?", parts: 2)
+              {damaged_memo, damaged_result} =
+                compute_valid_possibilities(
+                  a <> "#" <> b,
+                  actual_damaged_count,
+                  seq_damaged_count + 1,
+                  seq_unknowns_count - 1,
+                  damaged_counts,
+                  merged_memo
+                )
 
-          compute_valid_possibilities(
-            a <> "." <> b,
-            actual_damaged_count,
-            seq_damaged_count,
-            seq_unknowns_count - 1,
-            damaged_counts
-          )
+              merged_memo =
+                Map.merge(merged_memo, damaged_memo, fn key, val1, val2 ->
+                  MapSet.new(val1 ++ val2) |> MapSet.to_list()
+                end)
 
-        _ ->
-          if is_seq_valid(seq, actual_damaged_count, damaged_counts) do
-            [seq]
-          else
-            []
+              {
+                merged_memo,
+                operational_result ++ damaged_result
+              }
+
+            {false, true} ->
+              [a, b] = String.split(seq, "?", parts: 2)
+
+              compute_valid_possibilities(
+                a <> "#" <> b,
+                actual_damaged_count,
+                seq_damaged_count + 1,
+                seq_unknowns_count - 1,
+                damaged_counts,
+                memo
+              )
+
+            {true, false} ->
+              [a, b] = String.split(seq, "?", parts: 2)
+
+              compute_valid_possibilities(
+                a <> "." <> b,
+                actual_damaged_count,
+                seq_damaged_count,
+                seq_unknowns_count - 1,
+                damaged_counts,
+                memo
+              )
+
+            _ ->
+              if is_seq_valid(seq, actual_damaged_count, damaged_counts) do
+                {memo, [seq]}
+              else
+                {memo, []}
+              end
           end
-      end
+
+        new_memo =
+          inner_memo
+          |> Map.put(memo_key, result)
+
+        {new_memo, result}
+      end)
+
+    if is_tuple(computation_result) do
+      computation_result
+    else
+      IO.puts("result from memo")
+      {memo, computation_result}
+    end
   end
 
   # def compute_valid_possibilities(seq, max_damaged_count, max_operational_count)
@@ -193,28 +251,38 @@ defmodule Day12 do
   def part1(use_example) do
     input = parse_input(use_example)
 
-    input
-    |> Enum.map(fn {seq, counts} ->
-      seq
-      |> compute_valid_possibilities(counts)
-      |> Enum.count()
-    end)
-    |> Enum.sum()
+    {memo, sum} =
+      input
+      |> Enum.reduce({%{}, 0}, fn {seq, counts}, {memo, acc} ->
+        {new_memo, list} = seq |> compute_valid_possibilities(counts, memo)
+
+        {
+          new_memo,
+          acc + length(list)
+        }
+      end)
+
+    sum
   end
 
   def part2(use_example) do
     input = parse_input(use_example)
 
-    input
-    |> Enum.map(fn {seq, counts} ->
-      new_seq = seq <> "?" <> seq <> "?" <> seq <> "?" <> seq <> "?" <> seq
-      new_counts = counts ++ counts ++ counts ++ counts ++ counts
+    {memo, sum} =
+      input
+      |> Enum.reduce({%{}, 0}, fn {seq, counts}, {memo, acc} ->
+        new_seq = seq <> "?" <> seq <> "?" <> seq <> "?" <> seq <> "?" <> seq
+        new_counts = counts ++ counts ++ counts ++ counts ++ counts
 
-      new_seq
-      |> compute_valid_possibilities(new_counts)
-      |> Enum.count()
-    end)
-    |> Enum.sum()
+        {new_memo, list} = seq |> compute_valid_possibilities(new_counts, memo)
+
+        {
+          new_memo,
+          acc + length(list)
+        }
+      end)
+
+    sum
   end
 
   @spec parse_input(boolean) :: list({String.t(), list(pos_integer())})
