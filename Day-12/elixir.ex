@@ -13,24 +13,23 @@ defmodule Day12 do
     ]
   }
 
-  def merge_patterns(left, right, _is_continuous = false) when is_list(left) and is_list(right) do
+  def merge_patterns(left, right, _is_continuous = false, _ \\ nil)
+      when is_list(left) and is_list(right) do
     left ++ right
   end
 
-  def merge_patterns([], [], _), do: []
+  def merge_patterns([], [], _, _), do: []
 
-  def merge_patterns(left, [], _), do: left
+  def merge_patterns(left, [], _, _), do: left
 
-  def merge_patterns([], right, _), do: right
+  def merge_patterns([], right, _, _), do: right
 
-  def merge_patterns([left], [right], _is_continuous = true) do
+  def merge_patterns([left], [right], _is_continuous = true, _) do
     [left + right]
   end
 
-  def merge_patterns(left, right, _is_continuous = true) when is_list(left) and is_list(right) do
-    left_length = length(left)
-    right_length = length(right)
-
+  def merge_patterns(left, right, _is_continuous = true, left_length)
+      when is_list(left) and is_list(right) and is_integer(left_length) do
     {left_rest, [left_last]} =
       left
       |> Enum.split(left_length - 1)
@@ -44,6 +43,7 @@ defmodule Day12 do
 
   @spec merge_patterns(
           binary(),
+          binary(),
           list({boolean(), list(pos_integer())}),
           list({boolean(), list(pos_integer())})
         ) :: list({boolean(), list(pos_integer())})
@@ -56,11 +56,13 @@ defmodule Day12 do
       when is_list(left_patterns) and is_list(right_patterns) do
     left_patterns
     |> Enum.map(fn {left_can_merge_from_left, left, left_can_merge} ->
+      left_length = length(left)
+
       right_patterns
       |> Enum.map(fn {right_can_merge, right, right_can_merge_from_right} ->
         {
           left_first_char == "#" or (left_first_char == "?" and left_can_merge_from_left),
-          merge_patterns(left, right, left_can_merge and right_can_merge),
+          merge_patterns(left, right, left_can_merge and right_can_merge, left_length),
           right_last_char == "#" or (right_last_char == "?" and right_can_merge_from_right)
         }
       end)
@@ -84,6 +86,42 @@ defmodule Day12 do
     case sequence do
       <<_>> ->
         {memo, memo |> Map.get(sequence)}
+
+      _ ->
+        {left, right} = sequence |> String.split_at(Kernel.div(sequence_length, 2))
+
+        left_first_char = left |> String.slice(0, 1)
+        right_last_char = right |> String.slice(-1, 1)
+
+        # left_key = {left, left_first_char}
+
+        {memo, left_patterns} =
+          if memo |> Map.has_key?(left) do
+            IO.puts("got result for left: #{left} from memo")
+
+            {memo, memo |> Map.get(left)}
+          else
+            solve_for(left, memo)
+          end
+
+        {memo, right_patterns} =
+          if memo |> Map.has_key?(right) do
+            IO.puts("got result for right: #{right} from memo")
+
+            {memo, memo |> Map.get(right)}
+          else
+            solve_for(right, memo)
+          end
+
+        result =
+          merge_patterns(
+            left_first_char,
+            right_last_char,
+            left_patterns,
+            right_patterns
+          )
+
+        {memo |> Map.put(sequence, result), result}
 
       <<char>> <> rest ->
         # IO.puts("\nchar: #{<<char>>},\trest: #{rest}")
@@ -143,36 +181,53 @@ defmodule Day12 do
 
     input
     |> Enum.reduce({@base_case_memo, 0}, fn {sequence, pattern}, {memo, sum} ->
+      IO.puts("\nSolving for #{sequence} #{inspect(pattern, pretty: true)}")
+
       unfolded_pattern = pattern ++ pattern ++ pattern ++ pattern ++ pattern
+
+      pattern_sum = Enum.sum(pattern)
 
       left_first_char = sequence |> String.slice(0, 1)
       right_last_char = sequence |> String.slice(-1, 1)
 
-      {_, patterns_} = solve_for(sequence <> "?")
-      {_, patterns} = solve_for(sequence)
+      {memo, patterns_} = solve_for(sequence <> "?", memo)
+      {memo, patterns} = solve_for(sequence, memo)
 
       patterns =
         patterns
-        |> Enum.filter(fn {_, p, _} -> p == pattern end)
+        |> Enum.filter(fn {_, p, _} -> pattern_sum == Enum.sum(p) end)
+
+      #   |> Enum.filter(fn {can_merge_left, _, can_merge_right} ->
+      #     ((not can_merge_left and left_first_char != "#") or
+      #        (can_merge_left and left_first_char != ".")) and
+      #       ((not can_merge_right and right_last_char != "#") or
+      #          (can_merge_right and right_last_char != "."))
+      #   end)
 
       patterns_ =
         patterns_
-        |> Enum.filter(fn {_, p, _} ->
-          if p == pattern do
-            true
-          else
-            p_length = length(p)
-            pattern_length = length(pattern)
+        |> Enum.filter(fn {_, p, _} -> pattern_sum == Enum.sum(p) end)
 
-            p_length == pattern_length or
-              p_length - 1 == pattern_length
-          end
-        end)
+      #   |> Enum.filter(fn {can_merge_left, _, can_merge_right} ->
+      #     (not can_merge_left and left_first_char != "#") or
+      #       (can_merge_left and left_first_char != ".")
+      #   end)
+      #   |> Enum.filter(fn {_, p, _} ->
+      #     if p == pattern do
+      #       true
+      #     else
+      #       p_length = length(p)
+      #       pattern_length = length(pattern)
+
+      #       p_length == pattern_length or
+      #         p_length - 1 == pattern_length
+      #     end
+      #   end)
 
       # |> Enum.map(fn {_, p, _} -> {false, p} end)
 
-      IO.puts("patterns_ #{inspect(patterns_, pretty: true)}")
-      IO.puts("Solving for #{sequence}?#{sequence}")
+      IO.puts("patterns_ #{inspect(length(patterns_), pretty: true)}")
+      IO.puts("Merging patterns")
 
       patterns_of_2 =
         merge_patterns(
