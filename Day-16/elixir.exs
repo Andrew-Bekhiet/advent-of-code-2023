@@ -1,6 +1,6 @@
 defmodule Grid do
   @type t :: %__MODULE__{
-          data: [String.t()],
+          data: [tuple()],
           height: integer(),
           width: integer()
         }
@@ -9,17 +9,17 @@ defmodule Grid do
   @spec at(t(), {integer(), integer()}) :: String.t()
   def at(grid, {x, y}) do
     grid.data
-    |> Enum.at(y)
-    |> String.graphemes()
-    |> Enum.at(x)
+    |> elem(y)
+    |> elem(x)
   end
 
   def debug(%Grid{data: data}, counted_locations = %MapSet{}) do
     data
+    |> Tuple.to_list()
     |> Enum.with_index()
     |> Enum.map(fn {row, y} ->
       row
-      |> String.graphemes()
+      |> Tuple.to_list()
       |> Enum.with_index()
       |> Enum.map(fn {cell, x} ->
         if MapSet.member?(counted_locations, {x, y}) do
@@ -242,10 +242,16 @@ defmodule Day16 do
       File.read!(filename)
       |> String.split("\n", trim: true)
 
+    graphemes =
+      data
+      |> Enum.map(&String.graphemes/1)
+      |> Enum.map(&List.to_tuple/1)
+      |> List.to_tuple()
+
     %Grid{
-      data: data,
-      height: Enum.count(data),
-      width: String.length(Enum.at(data, 0))
+      data: graphemes,
+      height: tuple_size(graphemes),
+      width: graphemes |> elem(0) |> tuple_size()
     }
   end
 end
