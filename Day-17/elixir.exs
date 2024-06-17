@@ -18,18 +18,19 @@ defmodule Grid do
   @spec get_adjacent_locations(t(), {integer(), integer()}) :: [{integer(), integer()}]
   def get_adjacent_locations(%Grid{width: width, height: height}, {x, y}) do
     [
-      {x - 1, y},
       {x + 1, y},
-      {x, y - 1},
-      {x, y + 1}
+      {x, y + 1},
+      {x - 1, y},
+      {x, y - 1}
     ]
     |> Enum.filter(fn {x, y} ->
-      x >= 0 and y >= 0 and x < height and y < width
+      x >= 0 and y >= 0 and x < width and
+        y < height
     end)
   end
 
   @spec debug(t(), MapSet.t()) :: String.t()
-  def debug(%Grid{data: data}, visited_locations = %MapSet{}) do
+  def debug(%Grid{data: data}, visited_locations = %{}) do
     data
     |> Tuple.to_list()
     |> Enum.with_index()
@@ -38,8 +39,14 @@ defmodule Grid do
       |> Tuple.to_list()
       |> Enum.with_index()
       |> Enum.map(fn {cell, x} ->
-        if MapSet.member?(visited_locations, {x, y}) do
-          "▪"
+        if Map.has_key?(visited_locations, {x, y}) do
+          case visited_locations |> Map.get({x, y}) do
+            :up -> "↑"
+            :down -> "↓"
+            :left -> "←"
+            :right -> "→"
+            _ -> "▪"
+          end
         else
           cell
         end
@@ -65,144 +72,139 @@ defmodule Day17 do
       (y1 == yl and abs(x1 - xl) == l - 1)
   end
 
-  @spec dijkstra(Grid.t(), tuple(), tuple(), map(), MapSet.t()) :: nil | map()
+  def new_dir({x1, y1}, {x2, y2}) when x2 - x1 == 0 and y2 - y1 == 1, do: :down
+  def new_dir({x1, y1}, {x2, y2}) when x2 - x1 == 0 and y2 - y1 == -1, do: :up
+  def new_dir({x1, y1}, {x2, y2}) when x2 - x1 == 1 and y2 - y1 == 0, do: :right
+  def new_dir({x1, y1}, {x2, y2}) when x2 - x1 == -1 and y2 - y1 == 0, do: :left
+
+  @spec dijkstra(Grid.t(), :gb_sets.set(tuple()), tuple(), map()) :: tuple()
   def dijkstra(
         grid = %Grid{},
-        start,
+        locations_costs,
         goal,
-        locations_costs \\ %{},
-        visited_locations \\ %MapSet{}
+        visited_locations \\ %{}
       ) do
-    # dbg()
-    visited_locations = visited_locations |> MapSet.put(start)
+    {{hl, dir_len, dir, start, prev}, locations_costs} = :gb_sets.take_smallest(locations_costs)
 
-    case do_dijkstra(grid, start, goal, locations_costs, visited_locations) do
-      {false, locations_costs} ->
-        IO.puts("{false, locations_costs}")
-        # dbg()
+    visited_locations =
+      visited_locations
+      |> Map.update(start, {prev, dir, hl}, fn
+        {_, _, old_hl} = old when old_hl < hl -> old
+        _ -> {prev, dir, hl}
+      end)
 
-        {min_start, _} =
-          locations_costs
-          |> Enum.reject(fn {l, _} -> MapSet.member?(visited_locations, l) end)
-          |> Enum.sort_by(fn {_, {hl, _}} -> hl end)
-          |> Enum.at(1)
+    path = reconstruct_path(visited_locations, {start, dir, hl}, :infinity)
+    IO.puts(grid |> Grid.debug(path))
 
-        IO.puts(inspect(min_start, pretty: true))
+    dbg(
+      {hl,
+       path
+       |> Map.keys()
+       |> Enum.reject(fn
+         k when is_nil(k) -> true
+         {x, y} -> x == 0 and y == 0
+       end)
+       |> Enum.map(fn l -> grid |> Grid.at(l) end)
+       |> Enum.sum()}
+    )
 
-        if is_nil(min_start) do
-          IO.puts("min start is nil")
-          nil
-        else
-          dijkstra(grid, min_start, goal, locations_costs, visited_locations)
-        end
+    IO.puts("")
+    # path = [start | path]
 
-      {true, locations_costs} ->
-        IO.puts("{true, locations_costs}")
-        locations_costs
+    # path_length = length(path)
 
-      new_locations_costs ->
-        IO.puts(
-          grid
-          |> Grid.debug(reconstruct_path(new_locations_costs, start, :infinity) |> MapSet.new())
-        )
+    # if Kernel.rem(path_length, 20) == 0 do
+    #   IO.puts(grid |> Grid.debug(path |> MapSet.new()))
+    #   IO.puts("")
+    # end
 
-        IO.puts("")
-
-        # IO.puts(inspect({visited_locations, new_locations_costs}, pretty: true))
-
-        {min_start, _} =
-          new_locations_costs
-          |> Enum.reject(fn {l, _} -> MapSet.member?(visited_locations, l) end)
-          |> Enum.min_by(fn {_, {hl, _}} -> hl end, fn -> {nil, {nil, nil}} end)
-
-        IO.puts(inspect(min_start, pretty: true))
-
-        if is_nil(min_start) do
-          IO.puts("min start is nil")
-          nil
-        else
-          dijkstra(grid, min_start, goal, new_locations_costs, visited_locations)
-        end
-    end
-  end
-
-  @spec do_dijkstra(Grid.t(), tuple(), tuple(), map(), MapSet.t()) :: {true, map()}
-
-  def do_dijkstra(
-        grid = %Grid{},
-        start,
-        goal,
-        locations_costs = %{},
-        visited_locations = %MapSet{}
-      ) do
     if start == goal do
-      {true, locations_costs}
+      {hl, {start, dir, hl}, visited_locations}
     else
-      last_3_steps = reconstruct_path(locations_costs, start, 3)
+      # last_4_steps = path |> Enum.take(4)
+      # last_4_steps_len = length(last_4_steps)
 
       adjacent_locations =
         grid
         |> Grid.get_adjacent_locations(start)
-        |> Enum.reject(fn l -> MapSet.member?(visited_locations, l) end)
-        |> Enum.reject(fn l ->
-          Enum.count(last_3_steps) >= 3 and [l | last_3_steps] |> is_straight_line?()
+        |> Enum.reject(fn location ->
+          # dir_len >= 4 or
+          Map.has_key?(visited_locations, location) or
+            (dir_len == 3 and new_dir(start, location) == dir)
         end)
 
-      # |> dbg()
-
-      if Enum.empty?(adjacent_locations) do
-        {false, locations_costs}
-      else
+      new_locations_costs =
         adjacent_locations
-        |> Enum.reduce(locations_costs, fn l, locations_costs ->
-          hl = Grid.at(grid, l)
+        |> Enum.reduce(locations_costs, fn location, new_locations_costs ->
+          if location == {2, 1} and hl == 6 do
+            dbg(location_hl = grid |> Grid.at(location))
+            dbg(location_hl + hl)
+            dbg(new_dir(start, location))
+          end
 
-          {start_hl, _} = locations_costs |> Map.get(start, {0, nil})
+          location_hl = grid |> Grid.at(location)
+          new_hl = location_hl + hl
 
-          new_hl = hl + start_hl
+          new_dir = new_dir(start, location)
 
-          locations_costs
-          |> Map.update(l, {new_hl, start}, fn
-            {old, _} when new_hl < old -> {new_hl, start}
-            old -> old
-          end)
+          # :gb_sets.filter(fn
+          #   new_locations_costs)
+
+          :gb_sets.add(
+            {new_hl, if(new_dir == dir, do: dir_len + 1, else: 1), new_dir, location, start},
+            new_locations_costs
+          )
         end)
-      end
+
+      dijkstra(grid, new_locations_costs, goal, visited_locations)
     end
   end
 
-  def reconstruct_path(locations_costs, start, :infinity) do
-    with {_, prev} <- locations_costs |> Map.get(start) do
-      [start | reconstruct_path(locations_costs, prev, :infinity)]
+  def reconstruct_path(locations_costs, {start, dir, _}, :infinity) do
+    with prev when not is_nil(prev) <- locations_costs |> Map.get(start) do
+      Map.merge(reconstruct_path(locations_costs, prev, :infinity), %{start => dir})
     else
-      nil -> [start]
+      nil -> %{start => dir}
     end
   end
 
-  def reconstruct_path(locations_costs, start, 0), do: []
+  def reconstruct_path(locations_costs, {start, dir, _}, 0), do: []
 
-  def reconstruct_path(locations_costs, start, n) when is_integer(n) do
-    with {_, prev} when n > 0 <- locations_costs |> Map.get(start) do
-      [start | reconstruct_path(locations_costs, prev, n - 1)]
+  def reconstruct_path(locations_costs, {start, dir, _}, n) when is_integer(n) do
+    with prev when n > 0 <- locations_costs |> Map.get(start) do
+      Map.merge(reconstruct_path(locations_costs, prev, n - 1), %{start => dir})
     else
-      nil -> [start]
+      nil -> %{start => dir}
     end
   end
 
   def part1(use_example) do
-    # dbg()
     %Grid{width: w, height: h} = input = parse_input(use_example)
 
-    result = dijkstra(input, {0, 0}, {w - 1, h - 1})
+    {hl, start, visited} =
+      dijkstra(
+        input,
+        :gb_sets.from_list([{0, 0, nil, {0, 0}, nil}]),
+        {w - 1, h - 1}
+      )
 
-    # dbg()
-    path = reconstruct_path(result, {w - 1, h - 1}, :infinity)
+    path = reconstruct_path(visited, start, :infinity)
 
-    IO.puts(inspect(result, pretty: true))
-    IO.puts(input |> Grid.debug(path |> MapSet.new()))
-    IO.puts(inspect(path))
+    IO.puts(inspect(path, pretty: true))
+    IO.puts(input |> Grid.debug(path))
 
-    result |> Map.get({w - 1, h - 1})
+    IO.puts(
+      path
+      |> Map.keys()
+      |> Enum.reject(fn
+        k when is_nil(k) -> true
+        {x, y} -> x == 0 and y == 0
+      end)
+      |> Enum.map(fn l -> input |> Grid.at(l) end)
+      |> Enum.sum()
+    )
+
+    hl
   end
 
   def part2(use_example) do
@@ -233,9 +235,3 @@ defmodule Day17 do
     }
   end
 end
-
-# IEx.pry()
-# IEx.break!(Day17, :part1, 1)
-# Day17.part1(true)
-
-# Day17.part1(true) |> dbg()
