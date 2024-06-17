@@ -98,48 +98,56 @@ defmodule Day17 do
         grid = %Grid{},
         pq,
         goal,
-        visited_locations \\ %{},
+        is_part1 \\ true,
         seen \\ MapSet.new()
       ) do
     {{hl, start, same_dir_count, prev_dir}, pq} =
       :gb_sets.take_smallest(pq)
 
-    if start == goal do
-      {hl, start, visited_locations}
-    else
-      {pq, seen} =
-        grid
-        |> Grid.get_adjacent_locations(start)
-        |> Enum.map(fn l -> {l, new_dir(start, l)} end)
-        # |> dbg()
-        |> Enum.reject(fn {to, new_dir} ->
-          rotate180(new_dir) == prev_dir or
-            (new_dir == prev_dir and same_dir_count >= 3) or
-            seen
-            |> MapSet.member?(
-              {to, if(new_dir == prev_dir, do: same_dir_count + 1, else: 1), new_dir}
-            )
-        end)
-        |> Enum.reduce({pq, seen}, fn {to, new_dir}, {pq, seen} ->
-          new_hl = hl + Grid.at(grid, to)
+    cond do
+      start == goal and (is_part1 or (same_dir_count >= 4 and same_dir_count <= 10)) ->
+        {hl, start}
 
-          if new_dir == prev_dir do
-            {
-              :gb_sets.insert(
-                {new_hl, to, same_dir_count + 1, new_dir},
-                pq
-              ),
-              seen |> MapSet.put({to, same_dir_count + 1, new_dir})
-            }
-          else
-            {
-              :gb_sets.insert({new_hl, to, 1, new_dir}, pq),
-              seen |> MapSet.put({to, 1, new_dir})
-            }
-          end
-        end)
+      true ->
+        {pq, seen} =
+          grid
+          |> Grid.get_adjacent_locations(start)
+          |> Enum.map(fn l -> {l, new_dir(start, l)} end)
+          # |> dbg()
+          |> Enum.reject(fn {to, new_dir} ->
+            rotate180(new_dir) == prev_dir or
+              (new_dir == prev_dir and
+                 if(is_part1, do: same_dir_count >= 3, else: same_dir_count >= 11)) or
+              seen
+              |> MapSet.member?(
+                {to, if(new_dir == prev_dir, do: same_dir_count + 1, else: 1), new_dir}
+              )
+          end)
+          |> Enum.reduce({pq, seen}, fn {to, new_dir}, {pq, seen} ->
+            new_hl = hl + Grid.at(grid, to)
 
-      dijkstra(grid, pq, goal, visited_locations, seen)
+            cond do
+              new_dir == prev_dir ->
+                {
+                  :gb_sets.insert(
+                    {new_hl, to, same_dir_count + 1, new_dir},
+                    pq
+                  ),
+                  seen |> MapSet.put({to, same_dir_count + 1, new_dir})
+                }
+
+              is_part1 or (same_dir_count == 0 or (same_dir_count >= 4 and same_dir_count <= 10)) ->
+                {
+                  :gb_sets.insert({new_hl, to, 1, new_dir}, pq),
+                  seen |> MapSet.put({to, 1, new_dir})
+                }
+
+              true ->
+                {pq, seen}
+            end
+          end)
+
+        dijkstra(grid, pq, goal, is_part1, seen)
     end
   end
 
@@ -164,39 +172,31 @@ defmodule Day17 do
   def part1(use_example) do
     %Grid{width: w, height: h} = grid = parse_input(use_example)
 
-    {hl, start, visited} =
+    {hl, _} =
       grid
       |> dijkstra(
-        # {heat_loss, distance_to_goal, {x, y} = location, previous_direction, steps_in_same_direction}
         # {hl, start, same_dir_count, prev_dir}
         :gb_sets.singleton({0, {0, 0}, 0, nil}),
         {w - 1, h - 1},
-        %{
-          {0, 0} => {nil, nil, 0}
-        }
+        true
       )
-
-    path = reconstruct_path(visited, {start, nil, 0}, if(use_example, do: 99, else: 999))
-
-    IO.puts(inspect(path, pretty: true))
-    IO.puts(grid |> Grid.debug(path))
-
-    IO.puts(
-      path
-      |> Map.keys()
-      |> Enum.reject(fn
-        k when is_nil(k) -> true
-        {x, y} -> x == 0 and y == 0
-      end)
-      |> Enum.map(fn l -> grid |> Grid.at(l) end)
-      |> Enum.sum()
-    )
 
     hl
   end
 
   def part2(use_example) do
-    _input = parse_input(use_example)
+    %Grid{width: w, height: h} = grid = parse_input(use_example)
+
+    {hl, _} =
+      grid
+      |> dijkstra(
+        # {hl, start, same_dir_count, prev_dir}
+        :gb_sets.singleton({0, {0, 0}, 0, nil}),
+        {w - 1, h - 1},
+        false
+      )
+
+    hl
   end
 
   def parse_input(use_example) do
