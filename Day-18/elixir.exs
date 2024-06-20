@@ -13,6 +13,7 @@ defmodule InstructionsSet do
           instructions: list(Instruction.t()),
           vertices: list(tuple()),
           borders: list(tuple()),
+          perimeter: integer(),
           width: integer(),
           height: integer(),
           max: {integer(), integer()},
@@ -23,6 +24,7 @@ defmodule InstructionsSet do
     :instructions,
     :vertices,
     :borders,
+    :perimeter,
     :width,
     :height,
     :max,
@@ -31,6 +33,7 @@ defmodule InstructionsSet do
 
   def new(instructions) do
     vertices = get_vertices(instructions)
+    borders = connect_vertices(vertices)
 
     {min_x, max_x} =
       vertices
@@ -45,11 +48,27 @@ defmodule InstructionsSet do
     %InstructionsSet{
       instructions: instructions,
       vertices: vertices,
-      borders: connect_vertices(vertices),
+      borders: borders,
+      perimeter: calc_perimeter(vertices),
       width: max_x - min_x + 1,
       height: max_y - min_y + 1,
       max: {max_x, max_y},
       min: {min_x, min_y}
+    }
+  end
+
+  def new_lite(instructions) do
+    vertices = get_vertices(instructions)
+
+    %InstructionsSet{
+      instructions: instructions,
+      vertices: vertices,
+      borders: [],
+      perimeter: calc_perimeter(vertices),
+      width: nil,
+      height: nil,
+      max: nil,
+      min: nil
     }
   end
 
@@ -88,6 +107,25 @@ defmodule InstructionsSet do
         end
 
       {result, {x, y}}
+    end)
+    |> elem(0)
+  end
+
+  def calc_perimeter(vertices) when is_list(vertices) do
+    vertices
+    |> Enum.reduce({0, vertices |> List.last()}, fn {x, y}, {sum, {prev_x, prev_y}} ->
+      result =
+        if x == prev_x do
+          direction = if(y - prev_y > 0, do: 1, else: -1)
+
+          prev_y..(y - direction) |> Range.size()
+        else
+          direction = if(x - prev_x > 0, do: 1, else: -1)
+
+          prev_x..(x - direction) |> Range.size()
+        end
+
+      {sum + result, {x, y}}
     end)
     |> elem(0)
   end
@@ -198,15 +236,15 @@ defmodule InstructionsSet do
     |> Enum.join("\n")
   end
 
-  def calc_area_shoelace(%InstructionsSet{vertices: vertices}) do
+  def calc_area_shoelace(%InstructionsSet{vertices: vertices, perimeter: p}) do
     double_area =
       vertices
       |> Enum.reduce({List.last(vertices), 0}, fn {x2, y2}, {{x1, y1}, sum} ->
-        {{x2, y2}, sum + (x2 + x1) * (y2 - y1 - 1)}
+        {{x2, y2}, sum + (x2 + x1) * (y2 - y1)}
       end)
       |> elem(1)
 
-    abs(double_area) / 2
+    1 + p / 2 + abs(double_area) / 2
   end
 
   def debug(%InstructionsSet{borders: b, min: {min_x, min_y}, max: {max_x, max_y}}) do
@@ -235,7 +273,7 @@ defmodule Day18 do
 
     output = InstructionsSet.debug_area(instructions)
 
-    IO.puts(instructions |> InstructionsSet.calc_area())
+    IO.puts(instructions |> InstructionsSet.calc_area_shoelace())
 
     if use_example do
       IO.puts(output)
@@ -251,7 +289,7 @@ defmodule Day18 do
 
     # output = InstructionsSet.debug_area(instructions)
 
-    IO.puts(instructions |> InstructionsSet.calc_area())
+    IO.puts(instructions |> InstructionsSet.calc_area_shoelace())
 
     # if use_example do
     #   IO.puts(output)
@@ -305,6 +343,6 @@ defmodule Day18 do
         color: 0
       }
     end)
-    |> InstructionsSet.new()
+    |> InstructionsSet.new_lite()
   end
 end
